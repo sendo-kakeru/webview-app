@@ -1,98 +1,142 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRef } from "react";
+import { Platform, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { WebView } from "react-native-webview";
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { Spacing } from "@/constants/theme";
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
+/** Android エミュレータからホスト機の localhost は 10.0.2.2 で到達する。 */
+function resolveUrl(input: string): string {
+  if (Platform.OS === "android") {
+    return input.replace(
+      /(https?:\/\/)(localhost|127\.0\.0\.1)/i,
+      "$110.0.2.2",
     );
   }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
+  return input;
 }
 
-export default function HomeScreen() {
+// webviewで表示したいURL
+const RESOLVED_URL = resolveUrl("https://example.com");
+
+// JS文字列を渡すことで、WebView 内で JS を実行できる
+const INJECTED_JS = `
+(function () {
+})();
+true;
+`;
+
+export default function WebViewScreen() {
+  const insets = useSafeAreaInsets();
+  const webViewRef = useRef<WebView>(null);
+
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+    <View style={styles.root}>
+      <WebView
+        ref={webViewRef}
+        source={{ uri: RESOLVED_URL }}
+        style={StyleSheet.absoluteFill}
+        originWhitelist={["*"]}
+        injectedJavaScript={INJECTED_JS}
+        contentInsetAdjustmentBehavior="never"
+        automaticallyAdjustContentInsets={false}
+        mixedContentMode="always"
+        allowsInlineMediaPlayback
+        setSupportMultipleWindows={false}
+        onError={({ nativeEvent }) =>
+          console.warn(
+            `[WebView error][${Platform.OS}]`,
+            JSON.stringify(nativeEvent),
+          )
+        }
+        onHttpError={({ nativeEvent }) =>
+          console.warn(
+            `[WebView httpError][${Platform.OS}] ${nativeEvent.statusCode} ${nativeEvent.url}`,
+          )
+        }
+        onShouldStartLoadWithRequest={(req) => {
+          console.warn(`[WV shouldStart][${Platform.OS}] ${req.url}`);
+          return true;
+        }}
+        onLoadStart={({ nativeEvent }) =>
+          console.warn(`[WV loadStart][${Platform.OS}] ${nativeEvent.url}`)
+        }
+        onLoadEnd={({ nativeEvent }) => {
+          console.warn(
+            `[WV loadEnd][${Platform.OS}] loading=${nativeEvent.loading} ${nativeEvent.url}`,
+          );
+          webViewRef.current?.injectJavaScript(INJECTED_JS);
+        }}
+        onContentProcessDidTerminate={() =>
+          console.warn(`[WV processTerminated][${Platform.OS}]`)
+        }
+      />
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
-
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
-
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+      <View
+        pointerEvents="none"
+        style={[styles.safeTopLine, { top: insets.top }]}
+      >
+        <Text style={styles.safeTopLabel}>
+          safe top = {Math.round(insets.top)}
+        </Text>
+      </View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
+    backgroundColor: "#000",
   },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
+  safeTopLine: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: "rgba(255,0,80,0.9)",
   },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
+  safeTopLabel: {
+    position: "absolute",
+    right: Spacing.two,
+    bottom: 2,
+    fontSize: 14,
+    color: "rgba(255,0,80,0.9)",
   },
-  title: {
-    textAlign: 'center',
+  header: {
+    position: "absolute",
+    width: "90%",
+    height: 44,
+    backgroundColor: "rgba(170,170,170,0.55)",
+    alignItems: "center",
+    alignSelf: "center",
+    justifyContent: "center",
   },
-  code: {
-    textTransform: 'uppercase',
+  headerLabel: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "600",
   },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
+  panel: {
+    position: "absolute",
+    bottom: 0,
+    borderTopLeftRadius: Spacing.four,
+    borderTopRightRadius: Spacing.four,
     paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
+    paddingTop: Spacing.three,
+    gap: Spacing.half,
+  },
+  metricRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: Spacing.three,
+  },
+  metricKey: {
+    fontSize: 11,
+  },
+  metricVal: {
+    fontSize: 11,
+    fontVariant: ["tabular-nums"],
+    flexShrink: 1,
   },
 });
